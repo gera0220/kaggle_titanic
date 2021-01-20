@@ -2,31 +2,60 @@ library(tidyverse)
 train <- read_csv("train.csv")
 test <- read_csv("test.csv")
 
-#cabin and ticket column is not pretty important
+train <- mutate(train, is.train = TRUE)
+test <- mutate(test, is.train = FALSE)
+test <- mutate(test, Survived = NA)
 
-train <- train %>% 
+#combine train and test to clean data
+
+full <- rbind(train, test)
+full <- mutate(full, Embarked = replace(Embarked, is.na(Embarked), "S"))
+
+#cabin and ticket column are not pretty important
+full <- full %>% 
   select(-Cabin, -Ticket)
 
-summary(train)
+#There are NA values in age column, I'll replace them with the age median
+#summary(full$Age)
 
-#There are NA values in age column, I'll replace them with the age mean
-#summary(train$Age)
+full <- full %>% 
+  mutate(Age = replace(Age, is.na(Age), median(full$Age, na.rm = TRUE)))
 
-train <- train %>% mutate(Age = ifelse(is.na(Age), 29, Age))
+#Same way, I'll replace NA value in fare with the median
 
-train <- train %>% 
-  na.omit(Embarked)
+full <- full %>% 
+  mutate(Fare = replace(Fare, is.na(Fare), median(full$Fare, na.rm = TRUE)))
 
-#Dummies variables
+#Factors
 
-train <- train %>% mutate(Sex =ifelse(Sex == "female", 0 , 1))
+full$Pclass <- as.factor(full$Pclass)
+full$Sex <- as.factor(full$Sex)
+full$Embarked <- as.factor(full$Embarked)
 
-train <- train %>% mutate(Embarked_C =ifelse(Embarked == "C", 1 , 0))
+#Splitting full df
 
-train <- train %>% mutate(Embarked_S = ifelse(Embarked == "S", 1, 0))
+train <- filter(full, is.train == TRUE)
+test <- filter(full, is.train == FALSE)
 
-train <- train %>% mutate(Embarked_Q = ifelse(Embarked == "Q", 1, 0))
+#Factors again without NAs for Survived
+
+train$Survived <- as.factor(train$Survived)
 
 write_csv(train, "train_clean.csv")
+write_csv(test, "test_clean.csv")
 
+#Modeling
+
+formula <- as.formula("Survived ~ Pclass + Sex + Age + SibSp + Parch + 
+                       Fare + Embarked")
+
+library(randomForest)
+
+model <- randomForest(formula = formula, data = train, ntree = 500, mtry = 3,
+                      nodesize = 0.01 * nrow(test))
+
+PassengerId <- select(test, PassengerId) %>% 
+  mutate(Survived = as.character(predict(model, test)))
+
+write_csv(PassengerId, "results.csv")
 
